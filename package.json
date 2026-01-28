@@ -1,7 +1,7 @@
 {
   "name": "silver-intergalactic",
   "private": true,
-  "version": "26.0128.1502",
+  "version": "26.0128.1618",
   "description": "C盘数据文件迁移助手 - 支持管理员权限运行、文件迁移及符号链接创建",
   "author": "LuoLong",
   "type": "module",
@@ -11,12 +11,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "electron-store": "^11.0.2",
     "element-plus": "^2.13.1",
     "fs-extra": "^11.3.3",
     "uuid": "^13.0.0",
     "vue": "^3.4.21",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "webdav": "^5.8.0"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

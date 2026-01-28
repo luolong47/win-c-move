@@ -35,5 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   addHistory: (log: any) => ipcRenderer.invoke('add-history', log),
   deleteHistory: (id: string) => ipcRenderer.invoke('delete-history', id),
   exportPlans: () => ipcRenderer.invoke('export-plans'),
-  importPlans: () => ipcRenderer.invoke('import-plans')
+  importPlans: () => ipcRenderer.invoke('import-plans'),
+  webdavCheckConnection: (config: any) => ipcRenderer.invoke('webdav-check-connection', config),
+  webdavListPlans: () => ipcRenderer.invoke('webdav-list-plans'),
+  webdavExportPlans: () => ipcRenderer.invoke('webdav-export-plans'),
+  webdavImportPlan: (filename: string) => ipcRenderer.invoke('webdav-import-plan', filename)
 })

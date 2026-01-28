@@ -23,8 +23,10 @@
             <el-table-column prop="planName" label="方案名称" show-overflow-tooltip />
             <el-table-column label="结果" width="120">
                 <template #default="{ row }">
-                     <el-tag :type="row.errors > 0 ? 'warning' : 'success'">{{ row.result }}</el-tag>
-                     <span class="text-xs text-gray-400 ml-1">({{ row.errors }} errors)</span>
+                     <el-tag :type="row.errors > 0 ? 'warning' : 'success'">
+                        {{ row.result === 'Success' ? '成功' : (row.result === 'Partial Success' ? '部分成功' : row.result) }}
+                     </el-tag>
+                     <span class="text-xs text-gray-400 ml-1">({{ row.errors }} 个错误)</span>
                 </template>
             </el-table-column>
              <el-table-column label="操作" width="150" align="right">
@@ -51,8 +53,8 @@
                     </div>
                 </div>
             </div>
-            <div v-else class="mt-4 text-green-600">
-                ✔ 无错误记录
+            <div v-else class="mt-4 text-green-600 flex items-center">
+                <el-icon class="mr-1"><Check /></el-icon> 无错误记录
             </div>
         </div>
         <template #footer>

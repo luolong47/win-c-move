@@ -15,11 +15,32 @@
                 clearable 
                 class="flex-1"
             />
-            <el-button @click="handleExport">导出配置</el-button>
-            <el-button @click="handleImport">导入配置</el-button>
+            <el-dropdown>
+                <el-button type="primary">
+                导出方案 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                </el-button>
+                <template #dropdown>
+                    <el-dropdown-menu>
+                        <el-dropdown-item @click="handleExportLocal">导出到本地 (Local)</el-dropdown-item>
+                        <el-dropdown-item @click="handleExportWebDAV">导出到 WebDAV</el-dropdown-item>
+                    </el-dropdown-menu>
+                </template>
+            </el-dropdown>
+            
+            <el-dropdown>
+                <el-button>
+                导入方案 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                </el-button>
+                <template #dropdown>
+                    <el-dropdown-menu>
+                        <el-dropdown-item @click="handleImportLocal">从本地导入 (Local)</el-dropdown-item>
+                        <el-dropdown-item @click="handleImportWebDAV">从 WebDAV 导入</el-dropdown-item>
+                    </el-dropdown-menu>
+                </template>
+            </el-dropdown>
         </div>
         <div class="flex-1 overflow-auto">
-            <el-table :data="filteredPlans" style="width: 100%" empty-text="暂无保存的方案，请去配置页创建">
+            <el-table :data="filteredPlans" style="width: 100%" empty-text="暂无保存的方案，请新建方案">
                 <el-table-column prop="name" label="方案名称" />
                 <el-table-column prop="base" label="目标基准" show-overflow-tooltip />
                 <el-table-column label="包含目录数" width="120" align="center">
@@ -82,10 +103,18 @@
                 <el-table-column label="状态" width="100" align="center">
                     <template #default="{ row }">
                         <span v-if="row.status === 'pending'" class="text-gray-400">等待中</span>
-                        <span v-else-if="row.status === 'processing'" class="text-blue-500 font-bold">处理中...</span>
-                        <span v-else-if="row.status === 'done'" class="text-green-500">✅ 完成</span>
-                        <span v-else-if="row.status === 'skipped'" class="text-yellow-600 font-bold">⏩ 跳过</span>
-                        <span v-else-if="row.status === 'error'" class="text-red-500">❌ 失败</span>
+                        <span v-else-if="row.status === 'processing'" class="text-blue-500 font-bold flex items-center justify-center gap-1">
+                            <el-icon class="is-loading"><Loading /></el-icon> 处理中
+                        </span>
+                        <span v-else-if="row.status === 'done'" class="text-green-500 flex items-center justify-center gap-1">
+                            <el-icon><CircleCheck /></el-icon> 完成
+                        </span>
+                        <span v-else-if="row.status === 'skipped'" class="text-yellow-600 font-bold flex items-center justify-center gap-1">
+                            <el-icon><VideoPlay /></el-icon> 跳过
+                        </span>
+                        <span v-else-if="row.status === 'error'" class="text-red-500 flex items-center justify-center gap-1">
+                            <el-icon><CircleClose /></el-icon> 失败
+                        </span>
                     </template>
                 </el-table-column>
             </el-table>
@@ -132,6 +161,20 @@
             </div>
         </template>
     </el-dialog>
+
+    <!-- WebDAV Import Dialog -->
+    <el-dialog v-model="importWebDAVDialogVisible" title="WebDAV 导入" width="500px">
+        <div v-loading="loadingWebDAV" class="max-h-96 overflow-auto">
+             <el-table :data="webdavFiles" empty-text="未找到备份文件">
+                 <el-table-column prop="basename" label="文件名" />
+                 <el-table-column label="操作" width="100" align="right">
+                     <template #default="{ row }">
+                         <el-button link type="primary" @click="doImportWebDAV(row.filename)">导入</el-button>
+                     </template>
+                 </el-table-column>
+             </el-table>
+        </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -151,6 +194,11 @@ const searchQuery = ref('')
 const viewDialogVisible = ref(false)
 const viewPlanItems = ref<any[]>([])
 
+// Import WebDAV Dialog
+const importWebDAVDialogVisible = ref(false)
+const webdavFiles = ref<WebDAVFile[]>([])
+const loadingWebDAV = ref(false)
+
 // Execution Data
 const currentPlanName = ref('')
 const tasks = ref<MigrationTask[]>([])
@@ -164,6 +212,13 @@ interface MigrationTask {
     target: string // Full target path
     status: 'pending' | 'processing' | 'done' | 'error' | 'skipped'
     error?: string
+}
+
+interface WebDAVFile {
+    filename: string
+    basename: string
+    lastmod: string
+    size: number
 }
 
 // Computeds
@@ -181,7 +236,7 @@ const hasErrors = computed(() => errors.value.length > 0)
 
 const statusText = computed(() => {
     if (isMigrating.value) return '正在批量迁移...'
-    if (isDone.value) return hasErrors.value ? '已完成 (由错误)' : '全部完成'
+    if (isDone.value) return hasErrors.value ? '已完成 (有错误)' : '全部完成'
     return '准备就绪'
 })
 
@@ -207,19 +262,53 @@ const loadPlans = async () => {
     savedPlans.value = await window.api.getPlans()
 }
 
-const handleExport = async () => {
-    const success = await window.api.exportPlans()
-    if (success) {
-        alert('导出成功！')
-    }
+
+
+const handleExportLocal = async () => {
+     const success = await window.api.exportPlans()
+     if (success) alert('导出成功！')
 }
 
-const handleImport = async () => {
+const handleExportWebDAV = async () => {
+    const res = await window.api.webdavExportPlans()
+    if (res.success) alert('WebDAV 导出成功！')
+    else alert('导出失败: ' + res.error)
+}
+
+const handleImportLocal = async () => {
     const result = await window.api.importPlans()
     if (result.success) {
         alert(`成功导入 ${result.count} 个方案！`)
         loadPlans()
     } else if (result.error) {
+        alert(`导入失败: ${result.error}`)
+    }
+}
+
+const handleImportWebDAV = async () => {
+    importWebDAVDialogVisible.value = true
+    loadWebDAVFiles()
+}
+
+const loadWebDAVFiles = async () => {
+    loadingWebDAV.value = true
+    try {
+        const files = await window.api.webdavListPlans()
+        webdavFiles.value = files
+    } catch(e) {
+        alert('加载 WebDAV 文件失败')
+    } finally {
+        loadingWebDAV.value = false
+    }
+}
+
+const doImportWebDAV = async (filename: string) => {
+    const result = await window.api.webdavImportPlan(filename)
+    if (result.success) {
+        alert(`成功导入 ${result.count} 个方案！`)
+        importWebDAVDialogVisible.value = false
+        loadPlans()
+    } else {
         alert(`导入失败: ${result.error}`)
     }
 }

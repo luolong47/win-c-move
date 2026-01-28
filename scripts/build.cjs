@@ -59,13 +59,23 @@ async function build() {
         await runCommand('electron-builder --win', 'Electron Builder');
 
         // 4. Cleanup
-        console.log('Cleaning up unpacked files...');
+        // 4. Cleanup
+        console.log('Cleaning up unpacked files and builder logs...');
         try {
-            if (fs.existsSync('output/win-unpacked')) {
-                fs.rmSync('output/win-unpacked', { recursive: true, force: true });
-            }
+            const cleanupPaths = [
+                'output/win-unpacked',
+                'output/builder-debug.yml',
+                'output/builder-effective-config.yaml',
+                'output/.icon-ico'
+            ];
+
+            cleanupPaths.forEach(p => {
+                if (fs.existsSync(p)) {
+                    fs.rmSync(p, { recursive: true, force: true });
+                }
+            });
         } catch (e) {
-            console.log('Warning cleaning win-unpacked:', e.message);
+            console.log('Warning during cleanup:', e.message);
         }
 
         const endTime = Date.now();

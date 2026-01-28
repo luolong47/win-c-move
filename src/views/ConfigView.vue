@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 h-full flex flex-col">
     <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold">创建迁移方案</h2>
+        <h2 class="text-2xl font-bold">新建方案</h2>
         <div class="flex gap-2">
             <el-button @click="loadTree" :loading="loading" icon="Refresh">刷新目录</el-button>
         </div>
@@ -13,10 +13,10 @@
             <!-- Config Form -->
             <div class="bg-white p-4 rounded shadow-sm border">
                 <el-form label-position="top">
-                    <el-form-item label="方案名称 (Solution Name)">
+                    <el-form-item label="方案名称">
                         <el-input v-model="solutionName" placeholder="例如: Backup2024" />
                     </el-form-item>
-                    <el-form-item label="目标基准目录 (Target Base)">
+                    <el-form-item label="目标基准目录">
                         <div class="flex w-full gap-2">
                             <el-input v-model="targetBase" placeholder="例如: D:\CData" readonly />
                             <el-button @click="selectTargetBase">选择</el-button>
@@ -46,7 +46,9 @@
                     >
                         <template #default="{ node }">
                             <span class="flex items-center gap-1">
-                                <i class="text-yellow-500">📁</i> {{ node.label }}
+                                <el-icon v-if="node.data.isSymbolicLink" class="text-blue-500" title="软链接"><Link /></el-icon>
+                                <el-icon v-else class="text-yellow-500"><Folder /></el-icon>
+                                 {{ node.label }}
                             </span>
                         </template>
                     </el-tree>
@@ -65,7 +67,9 @@
                     >
                         <template #default="{ node }">
                             <span class="flex items-center gap-1">
-                                <i class="text-yellow-500">🔍</i> {{ node.label }}
+                                <el-icon v-if="node.data.isSymbolicLink" class="text-blue-500" title="软链接"><Link /></el-icon>
+                                <el-icon v-else class="text-yellow-500"><Folder /></el-icon> 
+                                {{ node.label }}
                                 <span class="text-xs text-gray-400 ml-2">{{ node.data.fullPath }}</span>
                             </span>
                         </template>
@@ -85,11 +89,11 @@
                 
                 <div class="flex-1 overflow-auto border rounded bg-gray-50 p-2">
                     <el-table :data="previewList" style="width: 100%" size="small" :empty-text="previewEmptyText">
-                        <el-table-column prop="source" label="源目录 (Source)" show-overflow-tooltip min-width="150" />
-                        <el-table-column label="❌" width="30" align="center">
-                             <template #default>➡️</template>
+                        <el-table-column prop="source" label="源目录" show-overflow-tooltip min-width="150" />
+                        <el-table-column label="方向" width="50" align="center">
+                             <template #default><el-icon><Right /></el-icon></template>
                         </el-table-column>
-                        <el-table-column prop="target" label="映射目标目录 (Target)" show-overflow-tooltip min-width="200">
+                        <el-table-column prop="target" label="映射目标目录" show-overflow-tooltip min-width="200">
                              <template #default="{ row }">
                                  <span class="text-blue-600 font-mono text-xs">{{ row.target }}</span>
                              </template>
@@ -128,7 +132,6 @@ const solutionName = ref('')
 const targetBase = ref('')
 const searchQuery = ref('')
 const loading = ref(false)
-const treeRef = ref<InstanceType<typeof ElTree>>()
 
 // Use Map for persistence: FullPath -> TreeNode
 const selectedNodeMap = ref(new Map<string, TreeNode>())
@@ -143,6 +146,7 @@ interface TreeNode {
   children?: TreeNode[]
   id: string
   leaf?: boolean
+  isSymbolicLink?: boolean
 }
 
 interface MappingPreview {
@@ -210,7 +214,8 @@ const loadNode = async (node: any, resolve: (data: TreeNode[]) => void) => {
            label: i.name,
            fullPath: i.path,
            id: i.path,
-           leaf: false 
+           leaf: false,
+           isSymbolicLink: i.isSymbolicLink
        })))
     }
     
@@ -220,7 +225,8 @@ const loadNode = async (node: any, resolve: (data: TreeNode[]) => void) => {
            label: i.name,
            fullPath: i.path,
            id: i.path,
-           leaf: false
+           leaf: false,
+           isSymbolicLink: i.isSymbolicLink
        })))
     } else {
         resolve([])
@@ -254,7 +260,7 @@ const performSearch = async () => {
 }
 
 // Re-introduce buildTree for search results (Flat list -> Tree)
-const buildTree = (items: Array<{name: string, path: string}>) => {
+const buildTree = (items: Array<{name: string, path: string, isSymbolicLink?: boolean}>) => {
     const tree: TreeNode[] = []
     items.sort((a, b) => a.path.localeCompare(b.path))
     
@@ -288,6 +294,12 @@ const buildTree = (items: Array<{name: string, path: string}>) => {
                 }
                 currentLevel.push(existingNode)
             }
+
+            // If this node corresponds to the item, set properties
+            if (i === parts.length - 1) {
+                existingNode.isSymbolicLink = item.isSymbolicLink
+            }
+            
             if (existingNode.children) {
                  currentLevel = existingNode.children
             }

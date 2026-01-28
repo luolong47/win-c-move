@@ -1,6 +1,22 @@
 import { app, BrowserWindow } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'node:fs'
+
+// Portable Mode: Redirect userData to specific directory next to executable
+// This ensures no files are left in Roaming/AppData when using the portable version
+const PORTABLE_EXECUTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR
+if (PORTABLE_EXECUTABLE_DIR) {
+  const portableDataPath = path.join(PORTABLE_EXECUTABLE_DIR, 'data')
+  if (!fs.existsSync(portableDataPath)) {
+    try {
+      fs.mkdirSync(portableDataPath, { recursive: true })
+    } catch (e) {
+      console.error('Failed to create portable data directory:', e)
+    }
+  }
+  app.setPath('userData', portableDataPath)
+}
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

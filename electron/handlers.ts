@@ -3,6 +3,8 @@ import fs from 'fs-extra'
 import path from 'path'
 import Store from 'electron-store'
 import { execSync } from 'child_process'
+import { createClient, AuthType } from 'webdav'
+
 
 // Initialize info
 const store = new Store({
@@ -148,6 +150,102 @@ export function registerHandlers(win: BrowserWindow) {
         return true
     })
 
+    // WebDAV Helper
+    const getWebDavClient = (config: any) => {
+        if (!config || !config.url) throw new Error("WebDAV Config Missing")
+        return createClient(config.url, {
+            username: config.username,
+            password: config.password,
+            authType: AuthType.Password
+        })
+    }
+
+    // WebDAV Handlers
+    ipcMain.handle('webdav-check-connection', async (_, config) => {
+        try {
+            const client = getWebDavClient(config)
+            await client.getDirectoryContents('/')
+            return { success: true, message: '连接成功' }
+        } catch (e: any) {
+            return { success: false, message: '连接失败: ' + e.message }
+        }
+    })
+
+    ipcMain.handle('webdav-list-plans', async () => {
+        try {
+            const config = store.get('webdav') as any
+            const client = getWebDavClient(config)
+
+            // Ensure backup dir exists
+            if (await client.exists('/MigrationBackups') === false) {
+                await client.createDirectory('/MigrationBackups')
+            }
+
+            const items = await client.getDirectoryContents('/MigrationBackups') as any[]
+            return items.filter(i => i.filename.endsWith('.json')).map(i => ({
+                filename: i.filename,
+                basename: path.basename(i.filename),
+                lastmod: i.lastmod,
+                size: i.size
+            }))
+        } catch (e: any) {
+            console.error(e)
+            return []
+        }
+    })
+
+    ipcMain.handle('webdav-export-plans', async () => {
+        try {
+            const config = store.get('webdav') as any
+            const client = getWebDavClient(config)
+
+            if (await client.exists('/MigrationBackups') === false) {
+                await client.createDirectory('/MigrationBackups')
+            }
+
+            const plans = store.get('plans', []) as any[]
+            const sanitizedPlans = plans.map(p => {
+                const { lastRun, ...rest } = p
+                return rest
+            })
+
+            const fileName = `migration_plans_backup_${Date.now()}.json`
+            const content = JSON.stringify(sanitizedPlans, null, 2)
+
+            await client.putFileContents(`/MigrationBackups/${fileName}`, content)
+            return { success: true }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
+    ipcMain.handle('webdav-import-plan', async (_, filename) => {
+        try {
+            const config = store.get('webdav') as any
+            const client = getWebDavClient(config)
+
+            const content = await client.getFileContents(filename, { format: 'text' })
+            const importedPlans = JSON.parse(content as string)
+
+            if (!Array.isArray(importedPlans)) return { success: false, error: "Invalid format" }
+
+            const currentPlans = store.get('plans', []) as any[]
+            let count = 0
+
+            importedPlans.forEach(plan => {
+                plan.id = Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                plan.name = plan.name + " (WebDAV)"
+                currentPlans.push(plan)
+                count++
+            })
+
+            store.set('plans', currentPlans)
+            return { success: true, count }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
     // Migration Logic
     // Migration Logic
     ipcMain.handle('start-migration', async (_, { source, targetParent }) => {
@@ -210,7 +308,21 @@ export function registerHandlers(win: BrowserWindow) {
                     const items = await fs.readdir(currentPath, { withFileTypes: true })
 
                     for (const item of items) {
-                        if (!item.isDirectory()) continue
+                        // Match logic
+                        let isSymbolicLink = item.isSymbolicLink()
+                        const fullPath = path.join(currentPath, item.name)
+
+                        if (!item.isDirectory() && !isSymbolicLink) continue
+
+                        // If symbolic link, verify it points to a directory
+                        if (isSymbolicLink) {
+                            try {
+                                const stats = await fs.stat(fullPath)
+                                if (!stats.isDirectory()) continue
+                            } catch (e) {
+                                continue // Broken link or access denied
+                            }
+                        }
 
                         // Skip system folders always
                         if (['$Recycle.Bin', 'System Volume Information', 'Recovery', 'Config.Msi'].includes(item.name)) continue
@@ -218,9 +330,6 @@ export function registerHandlers(win: BrowserWindow) {
                         // Skip heavy dev folders in sub-directories
                         if (['node_modules', '.git'].includes(item.name) && depth > 0) continue
 
-                        const fullPath = path.join(currentPath, item.name)
-
-                        // Match logic
                         let isMatch = false
                         if (query) {
                             if (item.name.toLowerCase().includes(query.toLowerCase())) {
@@ -235,13 +344,18 @@ export function registerHandlers(win: BrowserWindow) {
                             results.push({
                                 name: item.name,
                                 path: fullPath,
-                                size: 0
-                            })
+                                size: 0,
+                                isSymbolicLink: isSymbolicLink
+                            } as any)
                         }
 
                         // Continue recursion if we are searching (query exists)
                         // If no query, we only want top level, so don't recurse
                         if (query) {
+                            // Avoid infinite recursion loops with symlinks if necessary
+                            // For now, allow one level or basic traversal. 
+                            // Note: recursive search might get stuck in loops if we follow symlinks blindly.
+                            // But keeping logical simple for now as depth is limited strictly to 5.
                             await searchRecursive(fullPath, depth + 1)
                         }
                     }
