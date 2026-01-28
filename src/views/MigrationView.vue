@@ -23,6 +23,7 @@
                     <el-dropdown-menu>
                         <el-dropdown-item @click="handleExportLocal">导出到本地 (Local)</el-dropdown-item>
                         <el-dropdown-item @click="handleExportWebDAV">导出到 WebDAV</el-dropdown-item>
+                        <el-dropdown-item @click="handleExportGDrive">导出到 Google Drive</el-dropdown-item>
                     </el-dropdown-menu>
                 </template>
             </el-dropdown>
@@ -35,6 +36,7 @@
                     <el-dropdown-menu>
                         <el-dropdown-item @click="handleImportLocal">从本地导入 (Local)</el-dropdown-item>
                         <el-dropdown-item @click="handleImportWebDAV">从 WebDAV 导入</el-dropdown-item>
+                        <el-dropdown-item @click="handleImportGDrive">从 Google Drive 导入</el-dropdown-item>
                     </el-dropdown-menu>
                 </template>
             </el-dropdown>
@@ -57,9 +59,10 @@
                         {{ new Date(row.createdAt).toLocaleString() }}
                     </template>
                 </el-table-column>
-                <el-table-column label="操作" width="220" align="right">
+                <el-table-column label="操作" width="280" align="right">
                     <template #default="{ row }">
                         <el-button type="info" size="small" @click="openView(row)">查看</el-button>
+                        <el-button type="warning" size="small" @click="editPlanName(row)">编辑</el-button>
                         <el-button type="danger" size="small" @click="deletePlan(row.id)">删除</el-button>
                         <el-button type="primary" size="small" @click="selectPlan(row)">执行</el-button>
                     </template>
@@ -175,12 +178,27 @@
              </el-table>
         </div>
     </el-dialog>
+
+    <!-- Google Drive Import Dialog -->
+    <el-dialog v-model="importGDriveDialogVisible" title="Google Drive 导入" width="500px">
+        <div v-loading="loadingGDrive" class="max-h-96 overflow-auto">
+             <el-table :data="gdriveFiles" empty-text="未找到备份文件">
+                 <el-table-column prop="name" label="文件名" />
+                 <el-table-column label="操作" width="100" align="right">
+                     <template #default="{ row }">
+                         <el-button link type="primary" @click="doImportGDrive(row.id)">导入</el-button>
+                     </template>
+                 </el-table-column>
+             </el-table>
+        </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessageBox, ElMessage } from 'element-plus'
 
 const router = useRouter()
 
@@ -198,6 +216,11 @@ const viewPlanItems = ref<any[]>([])
 const importWebDAVDialogVisible = ref(false)
 const webdavFiles = ref<WebDAVFile[]>([])
 const loadingWebDAV = ref(false)
+
+// Import GDrive Dialog
+const importGDriveDialogVisible = ref(false)
+const gdriveFiles = ref<any[]>([])
+const loadingGDrive = ref(false)
 
 // Execution Data
 const currentPlanName = ref('')
@@ -275,6 +298,12 @@ const handleExportWebDAV = async () => {
     else alert('导出失败: ' + res.error)
 }
 
+const handleExportGDrive = async () => {
+    const res = await window.api.gdriveExportPlans()
+    if (res.success) alert('Google Drive 导出成功！')
+    else alert('导出失败: ' + res.error)
+}
+
 const handleImportLocal = async () => {
     const result = await window.api.importPlans()
     if (result.success) {
@@ -290,6 +319,11 @@ const handleImportWebDAV = async () => {
     loadWebDAVFiles()
 }
 
+const handleImportGDrive = async () => {
+    importGDriveDialogVisible.value = true
+    loadGDriveFiles()
+}
+
 const loadWebDAVFiles = async () => {
     loadingWebDAV.value = true
     try {
@@ -302,6 +336,18 @@ const loadWebDAVFiles = async () => {
     }
 }
 
+const loadGDriveFiles = async () => {
+    loadingGDrive.value = true
+    try {
+        const files = await window.api.gdriveListPlans()
+        gdriveFiles.value = files
+    } catch(e) {
+        alert('加载 Google Drive 文件失败')
+    } finally {
+        loadingGDrive.value = false
+    }
+}
+
 const doImportWebDAV = async (filename: string) => {
     const result = await window.api.webdavImportPlan(filename)
     if (result.success) {
@@ -311,6 +357,34 @@ const doImportWebDAV = async (filename: string) => {
     } else {
         alert(`导入失败: ${result.error}`)
     }
+}
+
+const doImportGDrive = async (fileId: string) => {
+    const result = await window.api.gdriveImportPlan(fileId)
+    if (result.success) {
+        alert(`成功导入 ${result.count} 个方案！`)
+        importGDriveDialogVisible.value = false
+        loadPlans()
+    } else {
+        alert(`导入失败: ${result.error}`)
+    }
+}
+
+const editPlanName = (plan: any) => {
+    ElMessageBox.prompt('请输入新的方案名称', '修改名称', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: plan.name,
+        inputPattern: /\S+/,
+        inputErrorMessage: '名称不能为空'
+    }).then(async ({ value }) => {
+        if (value && value !== plan.name) {
+            plan.name = value
+            await window.api.updatePlan(JSON.parse(JSON.stringify(plan)))
+            ElMessage.success('名称已修改')
+            await loadPlans()
+        }
+    }).catch(() => {})
 }
 
 const deletePlan = async (id: string) => {

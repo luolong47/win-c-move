@@ -4,6 +4,9 @@ import path from 'path'
 import Store from 'electron-store'
 import { execSync } from 'child_process'
 import { createClient, AuthType } from 'webdav'
+import { google } from 'googleapis'
+import http from 'http'
+import url from 'url'
 
 
 // Initialize info
@@ -235,6 +238,167 @@ export function registerHandlers(win: BrowserWindow) {
             importedPlans.forEach(plan => {
                 plan.id = Date.now().toString() + Math.random().toString(36).substr(2, 9)
                 plan.name = plan.name + " (WebDAV)"
+                currentPlans.push(plan)
+                count++
+            })
+
+            store.set('plans', currentPlans)
+            return { success: true, count }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
+    // --- Google Drive Helpers ---
+    const INTERNAL_GDRIVE_CONFIG = {
+        clientId: '23123711034-fn2ba3u59d86tcom6u15lkpt5k0ss1jq.apps.googleusercontent.com',
+        clientSecret: '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'
+    }
+
+    const getGDriveClient = async () => {
+        const config = store.get('gdrive') as any
+        if (!config || !config.token) throw new Error("Google Drive 尚未授权")
+
+        const oauth = new google.auth.OAuth2(
+            config.clientId || INTERNAL_GDRIVE_CONFIG.clientId,
+            config.clientSecret || INTERNAL_GDRIVE_CONFIG.clientSecret
+        )
+        oauth.setCredentials(config.token)
+        return google.drive({ version: 'v3', auth: oauth })
+    }
+
+    // Google Drive Auth
+    ipcMain.handle('gdrive-auth', async (_, config) => {
+        return new Promise((resolve) => {
+            const clientId = config?.clientId || INTERNAL_GDRIVE_CONFIG.clientId
+            const clientSecret = config?.clientSecret || INTERNAL_GDRIVE_CONFIG.clientSecret
+
+            const oauth = new google.auth.OAuth2(
+                clientId,
+                clientSecret,
+                'http://localhost:3000'
+            )
+
+            const authUrl = oauth.generateAuthUrl({
+                access_type: 'offline',
+                scope: ['https://www.googleapis.com/auth/drive.file']
+            })
+
+            // Open auth URL in browser
+            import('electron').then(({ shell }) => shell.openExternal(authUrl))
+
+            // Start temporary server to catch the code
+            const server = http.createServer(async (req, res) => {
+                try {
+                    if (req.url?.indexOf('code=') !== -1) {
+                        const qs = new url.URL(req.url!, 'http://localhost:3000').searchParams
+                        const code = qs.get('code')
+                        res.end('Authentication successful! You can close this window.')
+
+                        // Close server after small delay to ensure response is sent
+                        setTimeout(() => server.close(), 1000)
+
+                        const { tokens } = await oauth.getToken(code!)
+
+                        // If it's internal config, we don't need to save clientId/Secret back
+                        resolve({ success: true, token: tokens })
+                    }
+                } catch (e: any) {
+                    res.end('Authentication failed: ' + e.message)
+                    setTimeout(() => server.close(), 1000)
+                    resolve({ success: false, error: e.message })
+                }
+            }).listen(3000)
+        })
+    })
+
+    const getOrCreateBackupFolderId = async (drive: any) => {
+        const folderName = 'MigrationBackups'
+        const res = await drive.files.list({
+            q: `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: 'files(id)',
+            spaces: 'drive',
+        })
+
+        if (res.data.files && res.data.files.length > 0) {
+            return res.data.files[0].id
+        }
+
+        const folderMetadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+        }
+        const folder = await drive.files.create({
+            requestBody: folderMetadata,
+            fields: 'id',
+        })
+        return folder.data.id
+    }
+
+    ipcMain.handle('gdrive-list-plans', async () => {
+        try {
+            const drive = await getGDriveClient()
+            const folderId = await getOrCreateBackupFolderId(drive)
+            const res = await drive.files.list({
+                q: `'${folderId}' in parents and name contains 'migration_plans_backup_' and mimeType = 'application/json' and trashed = false`,
+                fields: 'files(id, name)',
+                spaces: 'drive',
+            })
+            return res.data.files || []
+        } catch (e: any) {
+            console.error(e)
+            return []
+        }
+    })
+
+    ipcMain.handle('gdrive-export-plans', async () => {
+        try {
+            const drive = await getGDriveClient()
+            const folderId = await getOrCreateBackupFolderId(drive)
+
+            const plans = store.get('plans', []) as any[]
+            const sanitizedPlans = plans.map(p => {
+                const { lastRun, ...rest } = p
+                return rest
+            })
+
+            const fileName = `migration_plans_backup_${Date.now()}.json`
+            const content = JSON.stringify(sanitizedPlans, null, 2)
+
+            await drive.files.create({
+                requestBody: {
+                    name: fileName,
+                    mimeType: 'application/json',
+                    parents: [folderId]
+                },
+                media: {
+                    mimeType: 'application/json',
+                    body: content,
+                },
+            })
+            return { success: true }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
+    ipcMain.handle('gdrive-import-plan', async (_, fileId) => {
+        try {
+            const drive = await getGDriveClient()
+            const res = await drive.files.get({
+                fileId: fileId,
+                alt: 'media'
+            })
+
+            const importedPlans = res.data as any[]
+            if (!Array.isArray(importedPlans)) return { success: false, error: "Invalid format" }
+
+            const currentPlans = store.get('plans', []) as any[]
+            let count = 0
+
+            importedPlans.forEach(plan => {
+                plan.id = Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                plan.name = plan.name + " (GDrive)"
                 currentPlans.push(plan)
                 count++
             })

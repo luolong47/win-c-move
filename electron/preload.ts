@@ -39,5 +39,9 @@ contextBridge.exposeInMainWorld('api', {
   webdavCheckConnection: (config: any) => ipcRenderer.invoke('webdav-check-connection', config),
   webdavListPlans: () => ipcRenderer.invoke('webdav-list-plans'),
   webdavExportPlans: () => ipcRenderer.invoke('webdav-export-plans'),
-  webdavImportPlan: (filename: string) => ipcRenderer.invoke('webdav-import-plan', filename)
+  webdavImportPlan: (filename: string) => ipcRenderer.invoke('webdav-import-plan', filename),
+  gdriveAuth: (config?: any) => ipcRenderer.invoke('gdrive-auth', config),
+  gdriveListPlans: () => ipcRenderer.invoke('gdrive-list-plans'),
+  gdriveExportPlans: () => ipcRenderer.invoke('gdrive-export-plans'),
+  gdriveImportPlan: (fileId: string) => ipcRenderer.invoke('gdrive-import-plan', fileId)
 })

@@ -19,12 +19,15 @@ interface Window {
         addHistory: (log: any) => Promise<boolean>
         deleteHistory: (id: string) => Promise<boolean>
         exportPlans: () => Promise<boolean>
-        exportPlans: () => Promise<boolean>
         importPlans: () => Promise<{ success: boolean; count?: number; error?: string; cancelled?: boolean }>
         webdavCheckConnection: (config: any) => Promise<{ success: boolean, message: string }>
         webdavListPlans: () => Promise<Array<{ filename: string, basename: string, lastmod: string, size: number }>>
         webdavExportPlans: () => Promise<{ success: boolean, error?: string }>
         webdavImportPlan: (filename: string) => Promise<{ success: boolean, count?: number, error?: string }>
+        gdriveAuth: (config?: any) => Promise<{ success: boolean, token?: any, error?: string }>
+        gdriveListPlans: () => Promise<Array<{ id: string, name: string }>>
+        gdriveExportPlans: () => Promise<{ success: boolean, error?: string }>
+        gdriveImportPlan: (fileId: string) => Promise<{ success: boolean, count?: number, error?: string }>
     }
 }
 
