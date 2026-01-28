@@ -1,7 +1,7 @@
 {
   "name": "silver-intergalactic",
   "private": true,
-  "version": "26.0128.1456",
+  "version": "26.0128.1502",
   "description": "C盘数据文件迁移助手 - 支持管理员权限运行、文件迁移及符号链接创建",
   "author": "LuoLong",
   "type": "module",
